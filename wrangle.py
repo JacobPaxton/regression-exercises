@@ -1,6 +1,11 @@
-import pandas as pd
 import os
 from env import host, password, username
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+from sklearn.preprocessing import StandardScaler
 
 
 def get_db_url(db_name, username=username, hostname=host, password=password):
@@ -57,8 +62,15 @@ def remove_outliers(df, k, col_list):
 
 def wrangle_zillow():
     """
-        Imports zillow data, drops nulls and duplicates, returns df
+        Imports zillow data, then:
+            Drops nulls and duplicates,
+            Removes outliers using Inter-Quartile Rule,
+            Fixes column dtypes and cleans values,
+            Drops unnecessary columns, and
+            Renames columns for easier reading, then
+         returns df
     """
+
     # Import zillow data
     zillow = get_zillow()
 
@@ -73,5 +85,90 @@ def wrangle_zillow():
                 'taxvaluedollarcnt', 'yearbuilt', 'taxamount']
     zillow = remove_outliers(df=zillow, k=1.5, col_list=col_list)
 
+    # Convert 'fips' from float to county code
+    # EX: float64 6037.0 -> object '06037'
+    zillow['fips'] = zillow.fips.astype('int').astype('str').apply(lambda x: '0' + x)
+
+    # Convert 'yearbuilt' from float to ordinal
+    # EX: float64 1954.0 -> object '1954'
+    zillow['yearbuilt'] = zillow.yearbuilt.astype('int').astype('str')
+
+    # Convert multiple columns to int (all values are whole numbers)
+    zillow['bedroomcnt'] = zillow.bedroomcnt.astype('int')
+    zillow['bathroomcnt'] = zillow.bathroomcnt.astype('int')
+    zillow['calculatedfinishedsquarefeet'] = zillow.calculatedfinishedsquarefeet.astype('int')
+    zillow['taxvaluedollarcnt'] = zillow.taxvaluedollarcnt.astype('int')
+
+    # Drop unnecessary columns
+    zillow.drop(columns=['propertylandusetypeid','propertylandusedesc'], inplace=True)
+
+    # Rename remaining columns
+    zillow.rename(columns={'bedroomcnt':'beds',
+                            'bathroomcnt':'baths',
+                            'calculatedfinishedsquarefeet':'area',
+                            'taxvaluedollarcnt':'worth',
+                            'yearbuilt':'built',
+                            'taxamount':'tax',
+                            'fips':'locality'}, inplace=True)
+
     # Pass back dataframe
     return zillow
+
+
+def zillow_standard_scaler(train, validate, test):
+    """
+        Accepts Zillow train, validate, and test data, then returns the scaled versions of each.
+    """
+
+    # Set Columns
+    cols = ['beds', 'baths', 'area', 'worth', 'tax']
+    cols_scaled = ['beds_scaled', 'baths_scaled', 'area_scaled', 'worth_scaled', 'tax_scaled']
+
+    # Create new dataframes
+    train_standard = train[cols].copy()
+    validate_standard = validate[cols].copy()
+    test_standard = test[cols].copy()
+
+    # Build, Fit Standard Scaler
+    standardscaler = StandardScaler()
+    standardscaler.fit(train[cols])
+
+    # Transform Scaler
+    scaled_train = standardscaler.transform(train[cols])
+    scaled_validate = standardscaler.transform(validate[cols])
+    scaled_test = standardscaler.transform(test[cols])
+
+    # Assign Scaled Values to DataFrames
+    train_standard[cols_scaled] = scaled_train
+    validate_standard[cols_scaled] = scaled_validate
+    test_standard[cols_scaled] = scaled_test
+
+    # Return Scaled Splits
+    return train_standard, validate_standard, test_standard
+
+def plot_scaled_unscaled(df):
+    """
+        Pulls in unscaled-scaled dataframe and prints visualizations for each comparison.
+        WARNING: uses df.columns.sort_values() and reads first two, then next two, and on.
+        Dataframe must have unscaled 'colname' and scaled 'colname_scaled' for each comparison,
+        or else function will break.
+    """
+
+    new_col_order = list(df.columns.sort_values())
+    df = df[new_col_order]
+    i = 0
+    
+    for col in new_col_order:
+        plt.figure(figsize=(13, 6))
+
+        # subplot 1
+        plt.subplot(121)
+        df[new_col_order[i]].plot.hist(title=new_col_order[i])
+
+        #subplot 2
+        plt.subplot(122)
+        df[new_col_order[i+1]].plot.hist(title=new_col_order[i+1])
+        
+        i += 2
+        if i > (len(new_col_order) - 1):
+            break
