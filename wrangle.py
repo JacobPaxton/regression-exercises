@@ -5,6 +5,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 
@@ -66,8 +67,9 @@ def wrangle_zillow():
             Drops nulls and duplicates,
             Removes outliers using Inter-Quartile Rule,
             Fixes column dtypes and cleans values,
-            Drops unnecessary columns, and
-            Renames columns for easier reading, then
+            Drops unnecessary columns,
+            Renames columns for easier reading,
+            Changes 'yearbuilt column' to 'age', then
          returns df
     """
 
@@ -111,9 +113,33 @@ def wrangle_zillow():
                             'taxamount':'tax',
                             'fips':'locality'}, inplace=True)
 
+    # Add new 'age' column (most recent after outliers removed is 2006)
+    zillow['age'] = 2006 - zillow['built'].astype('int')
+    
+    # Drop 'built' column
+    zillow.drop(columns='built', inplace=True)
+
     # Pass back dataframe
     return zillow
 
+def dummy_zillow(df):
+    """ Turns locality column of zillow data into dummy columns """
+    df = pd.get_dummies(df, columns=['locality'], drop_first=True)
+    return df
+
+def train_val_test(df):
+    """
+        Splits a dataframe into train, validate, and test, then
+        Returns the three dataframes.
+    """
+
+    train_validate, test = train_test_split(df, test_size=0.2, 
+                                                random_state=123)
+    
+    train, validate = train_test_split(train_validate, test_size=0.25, 
+                                                random_state=123)
+    
+    return train, validate, test
 
 def zillow_standard_scaler(train, validate, test):
     """
@@ -172,3 +198,23 @@ def plot_scaled_unscaled(df):
         i += 2
         if i > (len(new_col_order) - 1):
             break
+    
+def full_zillow_wrangle():
+    """
+        Run the entire gamut; acquire, prepare, encode, split, and scale Zillow.
+    """
+    # Acquire and prepare Zillow data from Codeup database
+    df = wrangle_zillow()
+    # Create dummy variables for 'locality' column
+    df = dummy_zillow(df)
+    # Split data
+    train, validate, test = train_val_test(df)
+    # Isolate target variable 'worth'
+    X_train_exp = train.drop(columns='worth')
+    X_train, y_train = train.drop(columns='worth'), train.worth
+    X_validate, y_validate = validate.drop(columns='worth'), validate.worth
+    X_test, y_test = test.drop(columns='worth'), test.worth
+    # Scale data
+    X_train, X_validate, X_test = zillow_standard_scaler(train, validate, test)
+
+    return df, X_train_exp, X_train, y_train, X_validate, y_validate, X_test, y_test
